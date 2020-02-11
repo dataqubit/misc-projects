@@ -5,53 +5,251 @@ import dash_core_components as dcc
 from dash.dependencies import Input, Output, State
 import pandas as pd
 import numpy as np
+import json
 
 
-app = dash.Dash("UFC graph")
+w_class_color_map = {'Lightweight': 'darkred', 'Welterweight': 'darkgreen', 
+'Middleweight': 'darkblue', 'Heavyweight': 'black', 
+'Light Heavyweight': 'orange', 'Featherweight': 'gray',
+'Bantamweight': 'white', 'Flyweight': 'AntiqueWhite',
+"Women's Strawweight": 'Beige', "Women's Bantamweight": 'CadetBlue',
+'Open Weight': 'Chocolate', "Women's Flyweight": 'DarkSlateGrey',
+"Catch Weight": 'DeepPink', "Women's Featherweight": 'Tomato'}
+
+
+# columns we are interested in for a fight
+fight_features = ['R_fighter', 'B_fighter', 'Referee', 'date', 'location', 'Winner', 'title_bout',
+ 'weight_class','no_of_rounds', 'R_age', 'R_Height_cms', 'R_Reach_cms', 'R_Weight_lbs', 
+ 'B_age','B_Height_cms', 'B_Reach_cms', 'B_Weight_lbs']
+
+# stylesheet for cytoscape objects
+my_stylesheet = [
+    # Group selectors
+    {
+        'selector': 'node',
+        'style': {
+            'content': 'data(label)'
+        }
+    },
+    ]
+
+"""    {
+        "selector": "edge",
+        "selectable": False,
+        "style": {
+          "curve-style": "bezier",
+          "line-color": "#999999",
+          "line-style": "solid",
+        }
+    }]"""
+
+# Class selectors
+for color_name in w_class_color_map.values():
+    if color_name == 'white':
+        my_stylesheet.append({
+        'selector': '.%s' %color_name,
+        'style': {
+            'background-color': color_name,
+            'line-color': color_name,
+            'border-paint': 'black',
+            "border-width": 1,
+            "border-style": "solid"
+        }
+        })
+    else:
+        my_stylesheet.append({
+            'selector': '.%s' %color_name,
+            'style': {
+                'background-color': color_name,
+                'line-color': color_name
+            }
+        })
+
+my_stylesheet.extend([{
+        'selector': '.triangle',
+        'style': {
+            'shape': 'triangle'
+        }
+    },
+
+    {
+        'selector': '.square',
+        'style': {
+            'shape': 'square'
+        }
+    },
+
+    {
+        'selector': '.diamond',
+        'style': {
+            'shape': 'diamond'
+        }
+    }
+])
+
+
+
+
+
+# define colors 
+colors = {
+    'text': '#e1e1e3',
+    'background': '#030324',
+    'plotBackground': '#ffffff',
+    'plotText': '#eeffb7',
+    'headerBackground': '#000000',#'#14113f',
+    'line': '#fc810f',
+    'line_fill': '#dddddb',
+    'topHeader': '#800f0f',
+    'secondHeader': '#fffbd3'
+}
+
+
+
+fontFamily = 'Oswald'
+
+
 
 
 # loading dataframe
 df_ufc_total = pd.read_csv('ufcdata/data.csv', parse_dates=['date'])
 
-df_ufc = df_ufc_total[(df_ufc_total.date.dt.year>2017) & (df_ufc_total.weight_class=='Heavyweight')]
+year_list = df_ufc_total.date.dt.year.unique()
+weight_class_list = list(df_ufc_total.weight_class.value_counts().index)
 
-nodes = [
+# loading most frequent weight class 
+with open('ufcdata/most_frequent_weight_class.json', 'r') as f:
+    fighter_weight_class_most_frequent = json.load(f)
+
+
+def get_nodes_edges(df_partial):
+    nodes = [
     {
-        'data': {'id': fighter_name, 'label': fighter_name}
+        'data': {'id': fighter_name, 'label': fighter_name},
+        'classes': w_class_color_map[fighter_weight_class_most_frequent[fighter_name]]
     }
-    for fighter_name in np.concatenate([df_ufc.R_fighter.unique(), df_ufc.B_fighter.unique()])]
+    for fighter_name in np.concatenate([df_partial.R_fighter.unique(), df_partial.B_fighter.unique()])]
+
+    edges = [
+    {'data': {'source': r_fighter, 'target': b_fighter,
+              'df_ix': ix}}
+    for r_fighter, b_fighter, ix in zip(df_partial.R_fighter, df_partial.B_fighter, df_partial.index)]
+
+    return nodes + edges
 
 
-
-edges = [
-    {'data': {'source': r_fighter, 'target': b_fighter}}
-    for r_fighter, b_fighter in zip(df_ufc.R_fighter, df_ufc.B_fighter)
-]
-
-elements = nodes + edges
-
+app = dash.Dash("UFC graph")
 
 app.layout = html.Div([
 
-    dcc.Dropdown(
-        id='dropdown-update-layout',
-        value='grid',
-        clearable=False,
-        options=[
-            {'label': name.capitalize(), 'value': name}
-            for name in ['grid', 'random', 'circle', 'cose', 'concentric']
-        ]
-    ),
-    cyto.Cytoscape(
-        id='cytoscape-update-layout',
-        layout={'name': 'grid'},
-        style={'width': '100%', 'height': '550px'},
-        elements=elements
-    )
-])
+
+    html.Div([
+
+    # Row 1: Header
+
+        html.Div([
+
+                    html.Div([      
+                        html.H3('All UFC fights in one graph', style={'color':  colors['topHeader'],
+                            'textAlign': 'center', 'fontSize': 54, 'font-family': fontFamily}),
+                        html.H4('Exploring UFC stats', style={'color':  colors['secondHeader'],
+                            'textAlign': 'center', 'font-family': fontFamily},),
+                        ], style={'backgroundColor': colors['headerBackground'], 'align': 'center'}),
+
+                ], style={'backgroundColor': colors['headerBackground'], 'align': 'center'}),
+
+        html.Br([], style={'lineHeight': 5}),
+
+        html.H5('UFC Graph:', style={'color':  colors['text'],
+                            'textAlign': 'center'},),
+
+            dcc.Dropdown(
+            id='dropdown-year',
+            value=[year_list[0]],
+            multi=True,
+            options=[
+                {'label': str(year), 'value': year}
+                for year in year_list],
+            style={'margin': 'auto', 'width': '60%'},
+            ),
+
+            dcc.Dropdown(
+            id='dropdown-weight-class',
+            value=[weight_class_list[0]],
+            multi=True,
+            options=[
+                {'label': w_class, 'value': w_class}
+                for w_class in weight_class_list],
+            style={'margin': 'auto', 'width': '60%'},
+            ),
+
+            dcc.Dropdown(
+            id='dropdown-update-layout',
+            value='cose',
+            options=[
+                {'label': name.capitalize(), 'value': name}
+                for name in ['cose', 'breadthfirst', 'circle', 'grid', 'random', 'concentric']],
+            style={'margin': 'auto', 'width': '40%'},
+            ),
+
+            html.Br([], style={'lineHeight': 3}),
+
+        html.Div([
+            html.Div([
 
 
-@app.callback(Output('cytoscape-update-layout', 'layout'),
+            cyto.Cytoscape(
+            id='cytoscape-ufc-graph',
+            layout={'name': 'cose'},
+            style={'margin': 'auto', 'maxWidth': '100%', 'height': '750px',
+                    'backgroundColor': colors['plotBackground']},
+            stylesheet=my_stylesheet
+            ),
+            ], style={'margin': 'auto'}, className='nine columns'),
+
+        html.Div([
+
+                dcc.Markdown(id='cytoscape-tapEdgeData-output'),
+
+                ], style={'margin': 'auto', 'color':  colors['secondHeader'],
+                           'font-family': "Roboto"}, className='three columns')
+
+
+        ], className="row"),
+
+
+        html.Br([], style={'lineHeight': 5}),
+
+
+
+        html.Div([
+            ],
+            style={'margin': 'auto'}
+            ),
+
+        html.Br([], style={'lineHeight': 5}),
+
+        html.Br([], style={'lineHeight': 50}),
+
+        html.Br([], style={'lineHeight': 50}),
+
+        html.Div([
+            html.P("""This app is developed by DataQubit.com.""",
+                                        style={'textAlign': 'center', 'color':  colors['text']})],
+            style={'margin': 'auto'}
+            ),
+
+        html.Br([], style={'lineHeight': 5})
+
+
+
+    ], 
+    style={'backgroundColor': colors['background'], 'margin': 'auto', 'width': '80%'})
+
+],
+style={'backgroundColor': '#cfcfcf'})
+
+@app.callback(Output('cytoscape-ufc-graph', 'layout'),
               [Input('dropdown-update-layout', 'value')])
 def update_layout(layout):
     return {
@@ -59,6 +257,41 @@ def update_layout(layout):
         'animate': True
     }
 
+@app.callback(Output('cytoscape-ufc-graph', 'elements'),
+              [Input('dropdown-year', "value"),
+               Input('dropdown-weight-class', "value")
+              ],
+              [State('cytoscape-ufc-graph', 'elements')])
+def update_ufc_graph(years, w_classes, elements):
+
+    elements = get_nodes_edges(df_ufc_total[(df_ufc_total.date.dt.year.isin(years)) & (df_ufc_total.weight_class.isin(w_classes))])
+    return elements
+
+@app.callback(Output('cytoscape-tapEdgeData-output', 'children'),
+            [Input('cytoscape-ufc-graph', 'tapEdgeData')])
+def displayTapEdgeData(data):
+    if data:
+        fight_dict = dict(df_ufc_total.loc[data['df_ix']][fight_features])
+        search_query = "%s and %s %d" %(fight_dict['R_fighter'], fight_dict['B_fighter'], fight_dict['date'].year)
+        youtube_search = "https://www.youtube.com/results?search_query=%s" %('+'.join(search_query.split(' ')))
+        search_line = '''[Search on YouTube](%s)''' %youtube_search
+        return search_line +  "\n* " + "\n* ".join([feat_name + ' : ' + str(feat) if feat_name!="date" else feat_name + ' : ' + str(feat.date())
+             for feat_name, feat in fight_dict.items()])
+
+### Loading External CSS  ###  
+
+external_css = [ "https://cdnjs.cloudflare.com/ajax/libs/normalize/7.0.0/normalize.min.css",
+        "https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css",
+        #"//fonts.googleapis.com/css?family=Raleway", 
+        "https://fonts.googleapis.com/css?family=Oswald",
+        "https://fonts.googleapis.com/css?family=Roboto",# try Teko
+        "https://codepen.io/plotly/pen/KmyPZr.css",
+        "https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css",
+        "https://codepen.io/chriddyp/pen/bWLwgP.css"
+        ]
+
+for css in external_css: 
+    app.css.append_css({ "external_url": css })
 
 if __name__ == '__main__':
     app.run_server(debug=True)
