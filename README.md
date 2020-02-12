@@ -19,4 +19,9 @@ Combination of ratioDelay = (20 to 50)
 and initLiveCellFactor=50 leads to cyclic population.
 
 To me it's just a fun project to practice Go. 
+
+* Building Ultimate Fighting Championship (UFC) Interactive Graph using historical data.
+
+This is based on Cytoscape within Python Dash (https://dash.plot.ly/cytoscape/)
+Data source: https://github.com/WarrierRajeev/UFC-Predictions
   
