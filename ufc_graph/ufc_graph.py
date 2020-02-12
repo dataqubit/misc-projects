@@ -68,6 +68,15 @@ for color_name in w_class_color_map.values():
             }
         })
 
+
+my_stylesheet.append({
+        'selector': '.jonjones',
+        'style': {
+            'background-image': 'data(url)',
+            'background-fit': 'cover'
+        }
+        })
+
 my_stylesheet.extend([{
         'selector': '.triangle',
         'style': {
@@ -131,7 +140,12 @@ def get_nodes_edges(df_partial):
         'data': {'id': fighter_name, 'label': fighter_name},
         'classes': w_class_color_map[fighter_weight_class_most_frequent[fighter_name]]
     }
-    for fighter_name in np.concatenate([df_partial.R_fighter.unique(), df_partial.B_fighter.unique()])]
+    if fighter_name!="Jon Jones" else 
+    {
+        'data': {'id': fighter_name, 'label': fighter_name, 'url': "https://www.gameonlivesports.com.au/TeamLogo/JONES_JON.png"},
+        'classes': 'jonjones'
+    }
+    for fighter_name in np.unique(np.concatenate([df_partial.R_fighter, df_partial.B_fighter]))]
 
     edges = [
     {'data': {'source': r_fighter, 'target': b_fighter,
