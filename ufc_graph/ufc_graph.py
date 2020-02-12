@@ -27,21 +27,24 @@ my_stylesheet = [
     # Group selectors
     {
         'selector': 'node',
+        'selectable': True,
         'style': {
             'content': 'data(label)'
         }
     },
-    ]
-
-"""    {
+    {
         "selector": "edge",
-        "selectable": False,
+        "selectable": True,
         "style": {
           "curve-style": "bezier",
-          "line-color": "#999999",
-          "line-style": "solid",
-        }
-    }]"""
+          'target-arrow-color': 'blue',
+          'target-arrow-shape': 'vee',
+          'arrow-scale': 2
+          #"line-color": "#999999",
+          #"line-style": "solid",
+        },
+
+    }]
 
 # Class selectors
 for color_name in w_class_color_map.values():
@@ -132,8 +135,10 @@ def get_nodes_edges(df_partial):
 
     edges = [
     {'data': {'source': r_fighter, 'target': b_fighter,
+              'df_ix': ix}} 
+    if winner=='Red' else {'data': {'source': b_fighter, 'target': r_fighter,
               'df_ix': ix}}
-    for r_fighter, b_fighter, ix in zip(df_partial.R_fighter, df_partial.B_fighter, df_partial.index)]
+    for r_fighter, b_fighter, winner, ix in zip(df_partial.R_fighter, df_partial.B_fighter, df_partial.Winner, df_partial.index)]
 
     return nodes + edges
 
@@ -175,11 +180,11 @@ app.layout = html.Div([
 
             dcc.Dropdown(
             id='dropdown-weight-class',
-            value=[weight_class_list[0]],
+            #value=[weight_class_list[0]],
             multi=True,
-            options=[
-                {'label': w_class, 'value': w_class}
-                for w_class in weight_class_list],
+            #options=[
+            #    {'label': w_class, 'value': w_class}
+            #    for w_class in weight_class_list],
             style={'margin': 'auto', 'width': '60%'},
             ),
 
@@ -203,11 +208,18 @@ app.layout = html.Div([
             layout={'name': 'cose'},
             style={'margin': 'auto', 'maxWidth': '100%', 'height': '750px',
                     'backgroundColor': colors['plotBackground']},
-            stylesheet=my_stylesheet
+            #stylesheet=my_stylesheet,
+            minZoom=0.1,
+            maxZoom=10
             ),
             ], style={'margin': 'auto'}, className='nine columns'),
 
         html.Div([
+
+                dcc.Markdown(id='cytoscape-tapNodeData-output'),
+
+                html.A(id='youtube-link', target='_blank'),
+
 
                 dcc.Markdown(id='cytoscape-tapEdgeData-output'),
 
@@ -249,12 +261,66 @@ app.layout = html.Div([
 ],
 style={'backgroundColor': '#cfcfcf'})
 
+##### CALLBACK FUNCTIONS #####
+
+## UPDATE DEPENDENT DROPDOWNS
+
+@app.callback(
+    [dash.dependencies.Output('dropdown-weight-class', 'value'),
+    dash.dependencies.Output('dropdown-weight-class', 'options')],
+    [dash.dependencies.Input('dropdown-year', 'value')])
+def update_weight_class_list(selected_years):
+    options = [{'label': i, 'value': i} 
+    for i in df_ufc_total[(df_ufc_total.date.dt.year.isin(selected_years))].weight_class.value_counts().index]
+    if len(options)==0:
+        return [None, options]
+    return [[options[0]['value']], options]
+
+
+## update stylesheet
+@app.callback(Output('cytoscape-ufc-graph', 'stylesheet'),
+              [Input('cytoscape-ufc-graph', 'tapNode')])
+def generate_stylesheet(node):
+    if not node:
+        return my_stylesheet
+
+    stylesheet = [{
+            "selector": 'node[id = "{}"]'.format(node['data']['id']),
+            "style": {
+                'background-color': 'lightgreen',
+                "border-color": "black",
+                "border-width": 2,
+                "border-opacity": 1,
+                "opacity": 1,
+    
+                "label": "data(label)",
+                "color": "darkblue",
+                "text-opacity": 1,
+                "font-size": 27,
+                'z-index': 9999}
+            }]
+
+    for edge in node['edgesData']:
+        stylesheet.append({
+                "selector": 'edge[id= "{}"]'.format(edge['id']),
+                "style": {
+                    "line-color": "lightgreen",
+                    'opacity': 1.0,
+                    'z-index': 5000
+                }
+            })
+
+    return my_stylesheet + stylesheet
+
+## Regular Callback Functions
+
 @app.callback(Output('cytoscape-ufc-graph', 'layout'),
               [Input('dropdown-update-layout', 'value')])
 def update_layout(layout):
     return {
         'name': layout,
-        'animate': True
+        'animate': True,
+        'fit': True
     }
 
 @app.callback(Output('cytoscape-ufc-graph', 'elements'),
@@ -263,20 +329,31 @@ def update_layout(layout):
               ],
               [State('cytoscape-ufc-graph', 'elements')])
 def update_ufc_graph(years, w_classes, elements):
+    if w_classes is None:
+        w_classes = []
 
     elements = get_nodes_edges(df_ufc_total[(df_ufc_total.date.dt.year.isin(years)) & (df_ufc_total.weight_class.isin(w_classes))])
     return elements
 
-@app.callback(Output('cytoscape-tapEdgeData-output', 'children'),
+@app.callback([Output('youtube-link', 'children'),
+            Output('youtube-link', 'href'),
+            Output('cytoscape-tapEdgeData-output', 'children')],
             [Input('cytoscape-ufc-graph', 'tapEdgeData')])
 def displayTapEdgeData(data):
     if data:
         fight_dict = dict(df_ufc_total.loc[data['df_ix']][fight_features])
         search_query = "%s and %s %d" %(fight_dict['R_fighter'], fight_dict['B_fighter'], fight_dict['date'].year)
         youtube_search = "https://www.youtube.com/results?search_query=%s" %('+'.join(search_query.split(' ')))
-        search_line = '''[Search on YouTube](%s)''' %youtube_search
-        return search_line +  "\n* " + "\n* ".join([feat_name + ' : ' + str(feat) if feat_name!="date" else feat_name + ' : ' + str(feat.date())
-             for feat_name, feat in fight_dict.items()])
+        return ['Search on YouTube', youtube_search, 
+                "\n* " + "\n* ".join([feat_name + ' : ' + str(feat) if feat_name!="date" else feat_name + ' : ' + str(feat.date())
+                     for feat_name, feat in fight_dict.items()])]
+    return [None, None, None]
+
+@app.callback(Output('cytoscape-tapNodeData-output', 'children'),
+              [Input('cytoscape-ufc-graph', 'tapNodeData')])
+def displayTapNodeData(data):
+    if data:
+        return data['label']
 
 ### Loading External CSS  ###  
 
