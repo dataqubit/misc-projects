@@ -140,11 +140,6 @@ def get_nodes_edges(df_partial):
         'data': {'id': fighter_name, 'label': fighter_name},
         'classes': w_class_color_map[fighter_weight_class_most_frequent[fighter_name]]
     }
-    if fighter_name!="Jon Jones" else 
-    {
-        'data': {'id': fighter_name, 'label': fighter_name, 'url': "https://www.gameonlivesports.com.au/TeamLogo/JONES_JON.png"},
-        'classes': 'jonjones'
-    }
     for fighter_name in np.unique(np.concatenate([df_partial.R_fighter, df_partial.B_fighter]))]
 
     edges = [
@@ -292,39 +287,60 @@ def update_weight_class_list(selected_years):
 
 
 ## update stylesheet
-@app.callback(Output('cytoscape-ufc-graph', 'stylesheet'),
-              [Input('cytoscape-ufc-graph', 'tapNode')])
-def generate_stylesheet(node):
-    if not node:
+"""@app.callback(Output('cytoscape-ufc-graph', 'stylesheet'),
+              [Input('cytoscape-ufc-graph', 'tapNodeData'),
+              Input('cytoscape-ufc-graph', 'tapEdgeData')])
+def generate_stylesheet_node(node, edge):
+    if not node and not edge:
         return my_stylesheet
 
-    stylesheet = [{
-            "selector": 'node[id = "{}"]'.format(node['data']['id']),
-            "style": {
-                'background-color': 'lightgreen',
-                "border-color": "black",
-                "border-width": 2,
-                "border-opacity": 1,
-                "opacity": 1,
-    
-                "label": "data(label)",
-                "color": "darkblue",
-                "text-opacity": 1,
-                "font-size": 27,
-                'z-index': 9999}
-            }]
+    node_stylesheet, edge_stylesheet = [], []
+    if node:
+        print("NODE:", node)
+        if 'data' in node.keys():
+            node_id = node['data']['id']
+        else:
+            node_id = node['id']
+        node_stylesheet.append([{
+                            "selector": 'node[id = "{}"]'.format(node_id),
+                            "style": {
+                                'background-color': 'lightgreen',
+                                "border-color": "black",
+                                "border-width": 2,
+                                "border-opacity": 1,
+                                "opacity": 1,
+                    
+                                "label": "data(label)",
+                                "color": "darkblue",
+                                "text-opacity": 1,
+                                "font-size": 27,
+                                'z-index': 9999}
+                            }])
 
-    for edge in node['edgesData']:
-        stylesheet.append({
-                "selector": 'edge[id= "{}"]'.format(edge['id']),
-                "style": {
-                    "line-color": "lightgreen",
-                    'opacity': 1.0,
-                    'z-index': 5000
-                }
-            })
+        for edge in node['edgesData']:
+                node_stylesheet.append({
+                        "selector": 'edge[id= "{}"]'.format(edge['id']),
+                        "style": {
+                            "line-color": "lightgreen",
+                            'opacity': 1.0,
+                            'z-index': 5000
+                        }
+                    })
 
-    return my_stylesheet + stylesheet
+    if edge:    
+        if 'data' in edge.keys():
+            print("EDGE:", edge)
+            edge_stylesheet.append([{
+                                "selector": 'edge[id= "{}"]'.format(edge['data']['id']),
+                                "style": {
+                                    "line-color": "crimson",
+                                    'opacity': 1.0,
+                                    "line-style": "dashed",
+                                    "width": 5
+                                }
+                            }])
+    return my_stylesheet + node_stylesheet + edge_stylesheet
+"""
 
 ## Regular Callback Functions
 
@@ -351,23 +367,80 @@ def update_ufc_graph(years, w_classes, elements):
 
 @app.callback([Output('youtube-link', 'children'),
             Output('youtube-link', 'href'),
-            Output('cytoscape-tapEdgeData-output', 'children')],
-            [Input('cytoscape-ufc-graph', 'tapEdgeData')])
-def displayTapEdgeData(data):
-    if data:
-        fight_dict = dict(df_ufc_total.loc[data['df_ix']][fight_features])
+            Output('cytoscape-tapEdgeData-output', 'children'),
+            Output('cytoscape-tapNodeData-output', 'children'),
+            Output('cytoscape-ufc-graph', 'stylesheet')],
+            [Input('cytoscape-ufc-graph', 'tapNodeData'),
+            Input('cytoscape-ufc-graph', 'tapEdgeData'),
+            Input('cytoscape-ufc-graph', 'tapNode'),
+            Input('cytoscape-ufc-graph', 'tapEdge')])
+def displayTapEdgeData(nodeData, edgeData, node, edge):
+    output_array = [None, None, None]
+    fighter_label = None
+    if edgeData:
+        fight_dict = dict(df_ufc_total.loc[edgeData['df_ix']][fight_features])
         search_query = "%s and %s %d" %(fight_dict['R_fighter'], fight_dict['B_fighter'], fight_dict['date'].year)
         youtube_search = "https://www.youtube.com/results?search_query=%s" %('+'.join(search_query.split(' ')))
-        return ['Search on YouTube', youtube_search, 
+        output_array = ['Search on YouTube', youtube_search, 
                 "\n* " + "\n* ".join([feat_name + ' : ' + str(feat) if feat_name!="date" else feat_name + ' : ' + str(feat.date())
                      for feat_name, feat in fight_dict.items()])]
-    return [None, None, None]
 
-@app.callback(Output('cytoscape-tapNodeData-output', 'children'),
+        # edge stylesheet
+    if edge:
+        edge_stylesheet = [{
+                                    "selector": 'edge[id= "{}"]'.format(edge['data']['id']),
+                                    "style": {
+                                        "line-color": "crimson",
+                                        'opacity': 1.0,
+                                        "line-style": "dashed",
+                                        "width": 5
+                                    }
+                                }]
+    else:
+        edge_stylesheet = []
+
+    if nodeData:
+        fighter_label = nodeData['label']
+
+        # node stylesheet
+    if node:
+        node_stylesheet = [{
+                                "selector": 'node[id = "{}"]'.format(node['data']['id']),
+                                "style": {
+                                    'background-color': 'lightgreen',
+                                    "border-color": "black",
+                                    "border-width": 2,
+                                    "border-opacity": 1,
+                                    "opacity": 1,
+                        
+                                    "label": "data(label)",
+                                    "color": "darkblue",
+                                    "text-opacity": 1,
+                                    "font-size": 27,
+                                    'z-index': 9999}
+                            }]
+
+        for edge_ in node['edgesData']:
+            node_stylesheet.append({
+                            "selector": 'edge[id= "{}"]'.format(edge_['id']),
+                            "style": {
+                                "line-color": "lightgreen",
+                                'opacity': 1.0,
+                                'z-index': 5000
+                            }
+                        })
+    else:
+        node_stylesheet = []
+
+    stylesheet = my_stylesheet + node_stylesheet + edge_stylesheet
+
+    return output_array + [fighter_label, stylesheet]
+
+"""@app.callback(Output('cytoscape-tapNodeData-output', 'children'),
               [Input('cytoscape-ufc-graph', 'tapNodeData')])
 def displayTapNodeData(data):
     if data:
-        return data['label']
+        return data['label']"""
 
 ### Loading External CSS  ###  
 
